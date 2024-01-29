@@ -1,44 +1,62 @@
 import * as ETHUtils from './utils/eth'
 import * as AlgoUtils from './utils/algo'
-import { OfferDetails } from './utils/OfferDetails';
+import * as ETHAccounts from './utils/accountETH'
+import * as AlgoAccounts from './utils/accountAlgo'
+import { OfferDetails } from './utils/OfferDetails'
+import { OrderDetails } from './utils/orderDetails'
+import { matchPair } from './utils/matching'
 
-
-// Ethereum private keys
-const privateKeyOwner = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
-const privateKeySeller = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
-const privateKeyBuyer = '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a';
 
 async function main() {
+  // await AlgoUtils.createAccount();
 
-  // Create owner accounts
-  const ETHOwner = await ETHUtils.getAccount(privateKeyOwner);
-  const AlgoOwner = await AlgoUtils.getAccount();
+  // Get owner accounts
+  const ETHOwner = await ETHUtils.getAccount(ETHAccounts.owner);
+  const AlgoOwner = await AlgoUtils.getAccount(AlgoAccounts.owner);
+  console.log("Owner accounts are created.\n")
 
-  // Create seller accounts
-  const ETHSeller = await ETHUtils.getAccount(privateKeySeller);
-  const AlgoSeller = await AlgoUtils.getAccount();
+  // Get seller accounts
+  const ETHSeller = await ETHUtils.getAccount(ETHAccounts.seller);
+  const AlgoSeller = await AlgoUtils.getAccount(AlgoAccounts.seller);
+  console.log("Seller accounts are created.\n")
+
+  // Get buyer accounts
+  const ETHBuyer = await ETHUtils.getAccount(ETHAccounts.buyer);
+  const AlgoBuyer = await AlgoUtils.getAccount(AlgoAccounts.buyer);
+  console.log("Buyer accounts are created.\n")
 
   // Start both exchanges
   const duration = 10000;
   const AlgoContractDetails = await AlgoUtils.startExchange(AlgoOwner, duration);
   await ETHUtils.startExchange(ETHOwner, duration);
+  console.log("Both exchanges have started.\n")
 
   // Sellers give offers
-  await ETHUtils.submitOffer(ETHSeller, new OfferDetails(1000, 10, "+001.3143", "+103.7093", "A"));
-  await AlgoUtils.submitOffer(AlgoSeller, new OfferDetails(1000, 10, "+001.3450", "+103.9832", "A"), AlgoContractDetails);
+  await ETHUtils.submitOffer(ETHSeller, new OfferDetails(2000, 30, "+001.3143", "+103.7093", "A"));
+  await AlgoUtils.submitOffer(AlgoSeller, new OfferDetails(2000, 30, "+001.3450", "+103.9832", "A"), AlgoContractDetails);
+  console.log("All offers have been made by sellers\n")
 
-  // Get order book and merge both
-  const ETHOrderBook = await ETHUtils.getOffers(ETHOwner);
-  const AlgoOrderBook = await AlgoUtils.getOffers(AlgoOwner, AlgoContractDetails);
-  const mergeOrderBooks =  ETHOrderBook.concat(AlgoOrderBook);
-  console.log(mergeOrderBooks)
+  // Buyers give orders
+  await ETHUtils.submitOrder(ETHBuyer, new OrderDetails(1000, 30, "+001.3143", "+103.7093", "A"));
+  await AlgoUtils.submitOrder(AlgoBuyer, new OrderDetails(1000, 30, "+001.3450", "+103.9832", "A"), AlgoContractDetails);
+  console.log("All orders have been made by buyers\n")
 
-  // Create buyer accounts
-  const ETHBuyer = await ETHUtils.getAccount(privateKeyBuyer);
-  const AlgoBuyer = await AlgoUtils.getAccount();
+  // Get offer books and merge to create combined offer book
+  const ETHOfferBook = await ETHUtils.getOfferBook(ETHOwner);
+  const AlgoOfferBook = await AlgoUtils.getOfferBook(AlgoOwner, AlgoContractDetails);
+  const mergeOfferBook =  ETHOfferBook.concat(AlgoOfferBook);
+  console.log(mergeOfferBook);
 
-  // Buyer give their preference
-  const 
+  // Get order books and merge to create combined order book
+  const ETHOrderBook = await ETHUtils.getOrderBook(ETHOwner);
+  const AlgoOrderBook = await AlgoUtils.getOrderBook(AlgoOwner, AlgoContractDetails);
+  const mergeOrderBook =  ETHOrderBook.concat(AlgoOrderBook);
+  console.log(mergeOrderBook);
+
+  // Matching algorithm
+  const matchesArray = await matchPair(mergeOrderBook, mergeOfferBook);
+  console.log(matchesArray);
+
 }
 
 

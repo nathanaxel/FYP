@@ -1,6 +1,6 @@
 {
     "compilerOptions": {
-        "target": "es5",  // You can change this to es6 or a higher version depending on your environment
+        "target": "es2015",  // You can change this to es6 or a higher version depending on your environment
         "module": "commonjs",
         "esModuleInterop": true,
         "resolveJsonModule": true,

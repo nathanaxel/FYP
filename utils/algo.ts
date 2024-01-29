@@ -1,7 +1,7 @@
-import algosdk, { ABIValue, Algodv2, decodeAddress } from 'algosdk';
+import algosdk, { ABIValue, Algodv2, decodeAddress, mnemonicToSecretKey } from 'algosdk';
 import { OfferDetails } from './OfferDetails'
+import { OrderDetails } from './orderDetails';
 import * as Algorandabi from '../Algorand/artifacts/contract.json';
-import process from 'process';
 import fs from 'fs';
 
 //ALGO configuration
@@ -10,8 +10,8 @@ const algorandServer = 'https://testnet-api.algonode.cloud';
 const algorandPort = undefined; 
 const algorandClient = new algosdk.Algodv2(algorandToken, algorandServer, algorandPort);
 
-// Get signer for owner of Algo exchange
-export async function getAccount() {
+// Get signer for algo accounts
+export async function createAccount() {
   const account = algosdk.generateAccount();
 
   // Check balance of account via algod
@@ -23,14 +23,20 @@ export async function getAccount() {
 
   // Get account information from the Algorand network
   let accountInfo = await algorandClient.accountInformation(account.addr).do();
-  console.log(accountInfo);
   console.log('Dispense ALGO at https://bank.testnet.algorand.network. Script will continue once ALGO is received...');
+  console.log(`Address at ${accountInfo.address}`);
 
   // Wait until account is funded
   await waitForBalance(account.addr);
   console.log(`${account.addr} funded`);
+  console.log(`Mnemonic of account: ${algosdk.secretKeyToMnemonic(account.sk)}`);
 
   return account;
+}
+
+// Get signer for algo accounts if mnemonic is used (reuse account)
+export async function getAccount(mnemonic: string ){
+  return mnemonicToSecretKey(mnemonic);
 }
 
 // Start Algo Exchange
@@ -53,19 +59,17 @@ export async function startExchange(account: any, duration: number){
     approvalProgram: approvalBytes, 
     clearProgram: clearBytes,
     numGlobalByteSlices: 2, 
-    numGlobalInts: 2, 
+    numGlobalInts: 3, 
     numLocalByteSlices: 2, 
-    numLocalInts: 2, 
+    numLocalInts: 3, 
   });
   const signedCreateAppTxn = appCreateTxn.signTxn(account.sk);
   const createAppTxnId = appCreateTxn.txID().toString();
   const createAppResponse = await algorandClient.sendRawTransaction(signedCreateAppTxn).do();
-  console.log('Create App Transaction ID:', createAppTxnId);
 
   // Wait for confirmation
   const createAppConfirmedTxn = await algosdk.waitForConfirmation(algorandClient, createAppTxnId, 4);
   const appId = createAppConfirmedTxn['application-index'];
-  console.log('Created App ID:', appId);
 
   // Fund contract
   let accountInfo = await algorandClient.accountInformation(account.addr).do();
@@ -92,15 +96,37 @@ export async function startExchange(account: any, duration: number){
     appID: appId,
     method: algosdk.getMethodByName(contract.methods, 'begin_submission'),
     methodArgs: [duration],
-    boxes: [{ appIndex: appId, name: new Uint8Array(Buffer.from("order_book")) },]
+    boxes: [
+      { appIndex: appId, name: new Uint8Array(Buffer.from("offer_book")) },
+      { appIndex: appId, name: new Uint8Array(Buffer.from("order_book")) },
+    ]
   });
   await atc.execute(algorandClient, 3);
 
   return { appId, contract };
 }
 
-// Submit offer to ETH Exchange
+// Submit offer to Algo Exchange
 export async function submitOffer(account: any, od: OfferDetails, contractDetails: any){
+  const suggestedParams = await algorandClient.getTransactionParams().do();
+  const atc = new algosdk.AtomicTransactionComposer();
+  atc.addMethodCall({
+    suggestedParams,
+    sender: account.addr,
+    signer: async (unsignedTxns) => unsignedTxns.map((t) => t.signTxn(account.sk)),
+    appID: contractDetails.appId,
+    method: algosdk.getMethodByName(contractDetails.contract.methods, 'submit_offer'),
+    methodArgs: [od.energy_amount, od.price, od.latitude, od.longitude, od.sustainability],
+    boxes: [
+      { appIndex: contractDetails.appId, name: new Uint8Array(algosdk.decodeAddress(account.addr).publicKey) }, 
+      { appIndex: contractDetails.appId, name: new Uint8Array(Buffer.from("offer_book")) }, 
+    ]
+  });
+  await atc.execute(algorandClient, 3);
+}
+
+// Submit order to Algo Exchange
+export async function submitOrder(account: any, od: OrderDetails, contractDetails: any){
   const suggestedParams = await algorandClient.getTransactionParams().do();
   const atc = new algosdk.AtomicTransactionComposer();
   atc.addMethodCall({
@@ -118,8 +144,63 @@ export async function submitOffer(account: any, od: OfferDetails, contractDetail
   await atc.execute(algorandClient, 3);
 }
 
-export async function getOffers(account: any, contractDetails: any){
+// Get offer book from Algo Exchange
+export async function getOfferBook(account: any, contractDetails: any){
   let offers: algosdk.ABIValue = [];
+
+  // Obtain number of offers submitted by reading global state
+  const appInfo = await algorandClient.getApplicationByID(contractDetails.appId).do();
+  const globalState = appInfo.params['global-state'] as {key: string, value: {bytes: string, type: number, uint: number}}[];
+  let numberOffers = 0;
+  globalState.forEach((state) => {
+    const key = Buffer.from(state.key, 'base64').toString();
+    if (key === 'offer_id') numberOffers =  state.value.uint;
+  });
+
+  // Loop each index in box to obtain complete offer books
+  const suggestedParams = await algorandClient.getTransactionParams().do();
+  const atc = new algosdk.AtomicTransactionComposer();
+  for (let i = 0; i < numberOffers; i++) {
+    atc.addMethodCall({
+      suggestedParams,
+      sender: account.addr,
+      signer: async (unsignedTxns) => unsignedTxns.map((t) => t.signTxn(account.sk)),
+      appID: contractDetails.appId,
+      method: algosdk.getMethodByName(contractDetails.contract.methods, 'read_offer_index'),
+      methodArgs: [i],
+      boxes: [
+        { appIndex: contractDetails.appId, name: new Uint8Array(Buffer.from("offer_book")) }, 
+      ]
+    });
+    const offer = await atc.execute(algorandClient, 3);
+    if (offer.methodResults[0].returnValue != undefined) offers.push(offer.methodResults[0].returnValue);
+  }
+
+  // For each offer, convert uint[] field to string
+  function asciiArrayToString(asciiArray: number[]): string {
+    return asciiArray.map((asciiCode) => String.fromCharCode(asciiCode)).join('');
+  }
+  offers.forEach(offer => {
+    if (!Array.isArray(offer)) return;
+    for (let i = 0; i < offer.length; i++){
+      if (offer[i] instanceof Object) {
+        offer[i] = asciiArrayToString(offer[i] as number[]);
+      }
+    }
+  });
+
+  // Convert big-int to number
+  offers = offers.map((offer: any) => 
+      offer.map((value: any) => 
+          typeof value === 'bigint' ? Number(value) : value
+      )
+  );
+  return offers;
+}
+
+// Get order book from Algo Exchange
+export async function getOrderBook(account: any, contractDetails: any){
+  let orders: algosdk.ABIValue = [];
 
   // Obtain number of orders submitted by reading global state
   const appInfo = await algorandClient.getApplicationByID(contractDetails.appId).do();
@@ -145,22 +226,32 @@ export async function getOffers(account: any, contractDetails: any){
         { appIndex: contractDetails.appId, name: new Uint8Array(Buffer.from("order_book")) }, 
       ]
     });
-    const offer = await atc.execute(algorandClient, 3);
-    if (offer.methodResults[0].returnValue != undefined) offers.push(offer.methodResults[0].returnValue);
+    const order = await atc.execute(algorandClient, 3);
+    if (order.methodResults[0].returnValue != undefined) orders.push(order.methodResults[0].returnValue);
   }
 
-  // For each offer, convert uint[] field to string
+  // For each order, convert uint[] field to string
   function asciiArrayToString(asciiArray: number[]): string {
     return asciiArray.map((asciiCode) => String.fromCharCode(asciiCode)).join('');
   }
-  offers.forEach(offer => {
-    if (!Array.isArray(offer)) return;
-    for (let i = 0; i < offer.length; i++){
-      if (offer[i] instanceof Object) {
-        offer[i] = asciiArrayToString(offer[i] as number[]);
+  orders.forEach(order => {
+    if (!Array.isArray(order)) return;
+    for (let i = 0; i < order.length; i++){
+      if (order[i] instanceof Object) {
+        order[i] = asciiArrayToString(order[i] as number[]);
       }
     }
   });
-  return offers;
+  // Convert big-int to number
+  orders = orders.map((offer: any) => 
+      offer.map((value: any) => 
+          typeof value === 'bigint' ? Number(value) : value
+      )
+  );
+  return orders;
+}
+
+// Set offer book from Algo Exchange
+export async function setOfferBook(account: any, offerBook: any){
 }
 

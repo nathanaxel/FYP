@@ -2,12 +2,9 @@ import { ethers } from "hardhat";
 
 async function main() {
 	const [owner] = await ethers.getSigners();
-    const Exchange = await ethers.deployContract("Exchange", [], owner);
-    await Exchange.waitForDeployment();
-
-	console.log(
-		`Smart contract deployed to ${Exchange.target}`
-	);
+  const Exchange = await ethers.deployContract("Exchange", [], owner);
+  await Exchange.waitForDeployment();
+	console.log(`Smart contract deployed to ${Exchange.target}`);
 }
 
 // We recommend this pattern to be able to use async/await everywhere

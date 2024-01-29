@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT 
 pragma solidity ^0.8.20;
 
+import "hardhat/console.sol";
+
 contract Exchange{
     enum State { Inactive, Active, Finished }
 
     struct Offer {
-        address producer;
+        string producer;
         uint256 energyAmount; 
         uint256 pricePerKWh;  
         
@@ -16,8 +18,9 @@ contract Exchange{
     }
 
     struct Order {
-        address consumer;
+        string consumer;
         uint256 energyAmount;
+        uint256 pricePerKWh;  
         
         string latitude;
         string longtitude;
@@ -47,43 +50,45 @@ contract Exchange{
     // Modifier to restrict function access when submission period is inactive
     modifier isInactive(){
         require(currentState == State.Inactive, "Submission is not inactive");
+        _;
     }
 
     // Modifier to restrict function access when submission period is active
     modifier isActive(){
         if (block.timestamp > submissionDeadline) currentState = State.Finished;
         require(currentState == State.Active, "Submission is not active");
+        _;
     }
 
     modifier isFinished(){
         if (block.timestamp > submissionDeadline) currentState = State.Finished;
         require(currentState == State.Active, "Submission is not finished");
+        _;
     }
 
     // Function to set the submission deadline
-    function startExchange(uint256 duration) public onlyOwner, IsInactive {
+    function startExchange(uint256 duration) public onlyOwner isInactive() {
         submissionDeadline = block.timestamp + duration;
         currentState = State.Active;
-    
     }
 
     // Function to override and stop submission period
-    function stopExchange() public onlyOwner, IsActive {
+    function stopExchange() public onlyOwner isActive() {
         currentState = State.Finished;
     }
 
     // Function to add an offer to the offer book
-    function submitOffer(
+    function submitOffer (
         uint256 _energyAmount, 
         uint256 _pricePerKWh, 
         string memory _latitude,
         string memory _longtitude,
         string memory _sustainability
-        ) IsActive public {
+        ) isActive() public {
         require(_energyAmount > 0, "Energy amount must be larger than 0");
 
         Offer memory newOffer = Offer({
-            producer: msg.sender,
+            producer: addressToString(msg.sender),
             energyAmount: _energyAmount,
             pricePerKWh: _pricePerKWh,
             latitude: _latitude,
@@ -95,17 +100,19 @@ contract Exchange{
     }
 
     // Function to add an order to the order book
-    function submitOrder()(
+    function submitOrder (
         uint256 _energyAmount, 
+        uint256 _pricePerKWh, 
         string memory _latitude,
         string memory _longtitude,
         string memory _sustainability
-        ) public IsActive {
+        ) public isActive() {
         require(_energyAmount > 0, "Energy amount must be larger than 0");
 
-        Offer memory newOrder = Order({
-            consumer: msg.sender,
+        Order memory newOrder = Order({
+            consumer: addressToString(msg.sender),
             energyAmount: _energyAmount,
+            pricePerKWh: _pricePerKWh,
             latitude: _latitude,
             longtitude: _longtitude,
             sustainability: _sustainability,
@@ -115,12 +122,46 @@ contract Exchange{
     }
 
     // Function to view the order book
-    function getOrderBook() public view returns (Offer[] memory) {
+    function getOrderBook() public view returns (Order[] memory) {
         return orderBook;
     }
 
     // Function to view the offer book
-    function getOfferbook() public view returns (Offer[] memory) {
+    function getOfferBook() public view returns (Offer[] memory) {
         return offerBook;
+    }
+
+    // Function to set the order book
+    function setOrderBook(Order[] memory _orderBook) public onlyOwner {
+        delete orderBook;
+        for (uint i = 0; i < _orderBook.length; i++) 
+            orderBook.push(_orderBook[i]);
+        
+    }
+
+    // Function to set the offer book
+    function setOfferBook(Offer[] memory _offerBook) public onlyOwner {
+        delete offerBook;
+        for (uint i = 0; i < _offerBook.length; i++) 
+            offerBook.push(_offerBook[i]);
+    }
+
+    // Function for matching algorithm
+    function matchOffersAndOrders() public onlyOwner{
+        
+    }
+
+    // Helper function to convert address to string
+    function addressToString(address _address) public pure returns(string memory) {
+        bytes memory alphabet = "0123456789abcdef";
+        bytes memory data = abi.encodePacked(_address);
+        bytes memory str = new bytes(2 + 20 * 2); // Length = 2 ('0x') + 20 bytes * 2 characters per byte
+        str[0] = '0';
+        str[1] = 'x';
+        for (uint i = 0; i < 20; i++) {
+            str[2+i*2] = alphabet[uint(uint8(data[i] >> 4))];
+            str[3+i*2] = alphabet[uint(uint8(data[i] & 0x0f))];
+        }
+        return string(str);
     }
 }

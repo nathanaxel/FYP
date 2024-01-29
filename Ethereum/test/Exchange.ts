@@ -8,8 +8,9 @@ describe("Exchange", function () {
     async function deployTokenFixture() {
         const [owner, addr1, addr2] = await ethers.getSigners();
         const duration = 300;
-        const Exchange = await ethers.deployContract("Exchange", [duration], owner);
+        const Exchange = await ethers.deployContract("Exchange", [], owner);
         await Exchange.waitForDeployment();
+        await Exchange.startExchange(200);
         return {Exchange, owner, duration, addr1, addr2};
     };
 
@@ -17,7 +18,22 @@ describe("Exchange", function () {
         const {Exchange} = await loadFixture(deployTokenFixture);
 
         // Submit an offer
-        await Exchange.submitOffer(1000, 50, "+40.7128", "-74.0060", "A")
+        await Exchange.submitOffer(1000, 50, "+040.7128", "-074.0060", "A");
+
+        // Get the offer book
+        const offerBook = await Exchange.getOfferBook();
+
+        // Check if the order book has one offer with the correct details
+        expect(offerBook.length).to.equal(1);
+        expect(offerBook[0].energyAmount).to.equal(1000);
+        expect(offerBook[0].pricePerKWh).to.equal(50);
+    });
+
+    it("Should allow order submissions within the deadline", async function () {
+        const {Exchange} = await loadFixture(deployTokenFixture);
+
+        // Submit an offer
+        await Exchange.submitOrder(1000, 10, "+040.7128", "-074.0060", "A");
 
         // Get the order book
         const orderBook = await Exchange.getOrderBook();
@@ -25,7 +41,6 @@ describe("Exchange", function () {
         // Check if the order book has one offer with the correct details
         expect(orderBook.length).to.equal(1);
         expect(orderBook[0].energyAmount).to.equal(1000);
-        expect(orderBook[0].pricePerKWh).to.equal(50);
     });
 
     it("Should reject offer submissions after the deadline", async function () {
@@ -38,58 +53,61 @@ describe("Exchange", function () {
         // Try to submit an offer and expect a revert
         await expect(
             Exchange.submitOffer(1000, 50, "+40.7128", "-74.0060", "A")
-        ).to.be.revertedWith("Offer submission period has ended.");
+        ).to.be.revertedWith("Submission is not active");
     });
 
-    // it("Should sort offers correctly (price)", async function () {
-    //     const {Exchange, owner, duration, addr1, addr2} = await loadFixture(deployTokenFixture);
+    it("Should be able to set order book", async function(){
+        const {Exchange} = await loadFixture(deployTokenFixture);
+        
+        const input1 = [
+            [
+              '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
+              1000,
+              10,
+              '+001.3143',
+              '+103.7093',
+              'A',
+              'ETHE'
+            ]
+        ];
 
-    //     // Submit different offers
-    //     await Exchange.connect(addr1).submitOffer(1000, 30); // 1000 kWh at 30 Wei
-    //     await Exchange.connect(addr2).submitOffer(500, 50);  // 500 kWh at 50 Wei
-    //     await Exchange.connect(addr1).submitOffer(200, 40);  // 200 kWh at 40 Wei
+        const input2 = [
+            [
+              '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
+              1000,
+              10,
+              '+001.3143',
+              '+103.7093',
+              'A',
+              'ETHE'
+            ],
+            [
+              'SDNMQG2MW2TMGRJXFBYMKRIL2XPXR7EGWOGQ7SKEMIYUEHCJOY2DI4IGSA',
+              1000,
+              10,
+              '+001.3450',
+              '+103.9832',
+              'A',
+              'ALGO'
+            ]
+        ];
 
-    //     // Get the sorted order book
-    //     const orderBook = await Exchange.getOrderBook();
+        var input3:any = [];
 
-    //     // Check if the order book is sorted by price per kWh in ascending order
-    //     expect(orderBook[0].pricePerKWh).to.be.lessThanOrEqual(orderBook[1].pricePerKWh);
-    //     expect(orderBook[1].pricePerKWh).to.be.lessThanOrEqual(orderBook[2].pricePerKWh);
-    // });
 
-    // it("Should sort offers correctly (amount)", async function () {
-    //     const {Exchange, owner, duration, addr1, addr2} = await loadFixture(deployTokenFixture);
 
-    //     // Submit different offers
-    //     await Exchange.connect(addr1).submitOffer(1000, 30); // 1000 kWh at 30 Wei
-    //     await Exchange.connect(addr2).submitOffer(500, 30);  // 500 kWh at 30 Wei
-    //     await Exchange.connect(addr1).submitOffer(200, 30);  // 200 kWh at 30 Wei
+        await Exchange.setOfferBook(input1);
+        var output = await Exchange.getOfferBook();
+        expect(output.length == 1);
 
-    //     // Get the sorted order book
-    //     const orderBook = await Exchange.getOrderBook();
+        await Exchange.setOfferBook(input2);
+        output = await Exchange.getOfferBook();
+        expect(output.length == 2);
 
-    //     // Check if the order book is sorted by energy amount in descending order
-    //     expect(orderBook[0].pricePerKWh).to.be.lessThanOrEqual(orderBook[1].energyAmount);
-    //     expect(orderBook[1].pricePerKWh).to.be.lessThanOrEqual(orderBook[2].energyAmount);
-    // });
-
-    // it("Should sort offers correctly (earlier)", async function () {
-    //     const {Exchange, owner, duration, addr1, addr2} = await loadFixture(deployTokenFixture);
-
-    //     // Submit different offers
-    //     await Exchange.connect(addr1).submitOffer(1000, 30); // 1000 kWh at 30 Wei
-    //     await Exchange.connect(addr2).submitOffer(1000, 30); // 1000 kWh at 30 Wei
-    //     await Exchange.connect(addr1).submitOffer(1000, 30); // 1000 kWh at 30 Wei
-
-    //     // Get the sorted order book
-    //     const orderBook = await Exchange.getOrderBook();
-
-    //     // Check if the order book is sorted by timestamp in ascending order
-    //     expect(orderBook[0].producer).to.be.equal(addr1.address);
-    //     expect(orderBook[1].producer).to.be.equal(addr2.address);
-    //     expect(orderBook[2].producer).to.be.equal(addr1.address);
-    // });
-
+        await Exchange.setOfferBook(input3);
+        output = await Exchange.getOfferBook();
+        expect(output.length == 0);
+    });
 
 
 });
