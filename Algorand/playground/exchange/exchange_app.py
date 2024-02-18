@@ -52,6 +52,12 @@ class ExchangeState:
     consumers = BoxMapping(abi.Address, Order)
     offer_book = BoxList(Offer, MAX_OFFER)
     order_book = BoxList(Order, MAX_OFFER)
+
+    total_balance = beaker.GlobalStateValue(
+        stack_type=TealType.uint64, 
+        default=Int(0), 
+        descr="Total balance of smart contract",
+    )
     
 
 app = beaker.Application("Exchange", state = ExchangeState())
@@ -127,6 +133,7 @@ def submit_order(
     _longtitude     : abi.String,
     _sustainability : abi.String
     ) -> Expr:
+    payment_amount = Mul(_energy_amount.get(), _price_per_kwh.get())
     return Seq(
         # Make sure that submission period has started and hasn't ended
         Assert(Global.latest_timestamp() < app.state.submission_deadline.get()),
@@ -139,6 +146,10 @@ def submit_order(
 
         # Make sure that order book is not full
         Assert(app.state.order_id.get() < Int(MAX_ORDER)),
+
+        # # Ensure this is a payment transaction and the amount matches the required payment
+        # Assert(Txn.type_enum() == TxnType.Payment),
+        # Assert(Txn.asset_amount() == payment_amount),
 
         # Add the new offer to the order book
         (consumer:= abi.Address()).set(Txn.sender()),
@@ -160,6 +171,9 @@ def submit_order(
         app.state.order_book[app.state.order_id.get()].set(order),
         app.state.consumers[Txn.sender()].set(order),
 
+        # Update contract balance
+        app.state.total_balance.set(Add(app.state.total_balance, payment_amount)),
+
         # Increment order id by 1
         app.state.order_id.set(Add(app.state.order_id.get(), Int(1)))
     )
@@ -176,6 +190,5 @@ def read_order_index(index: abi.Uint64, *, output: Order) -> Expr:
 @app.external
 def read_offer_producer(address: abi.Address, *, output: Offer) -> Expr:
     return app.state.producers[address].store_into(output)
-
 
         

@@ -8,22 +8,14 @@ import { matchPair } from './utils/matching'
 
 
 async function main() {
-  // await AlgoUtils.createAccount();
-
-  // Get owner accounts
+  // Get owner, buyer, and seller accounts
   const ETHOwner = await ETHUtils.getAccount(ETHAccounts.owner);
   const AlgoOwner = await AlgoUtils.getAccount(AlgoAccounts.owner);
-  console.log("Owner accounts are created.\n")
-
-  // Get seller accounts
   const ETHSeller = await ETHUtils.getAccount(ETHAccounts.seller);
   const AlgoSeller = await AlgoUtils.getAccount(AlgoAccounts.seller);
-  console.log("Seller accounts are created.\n")
-
-  // Get buyer accounts
   const ETHBuyer = await ETHUtils.getAccount(ETHAccounts.buyer);
   const AlgoBuyer = await AlgoUtils.getAccount(AlgoAccounts.buyer);
-  console.log("Buyer accounts are created.\n")
+  console.log("All accounts are created.\n")
 
   // Start both exchanges
   const duration = 10000;
@@ -56,7 +48,6 @@ async function main() {
   // Matching algorithm
   const matchesArray = await matchPair(mergeOrderBook, mergeOfferBook);
   console.log(matchesArray);
-
 }
 
 

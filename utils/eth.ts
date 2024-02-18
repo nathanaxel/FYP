@@ -42,13 +42,18 @@ export async function submitOffer(signer: any, od: OfferDetails){
 // Submit order to ETH Exchange
 export async function submitOrder(signer: any, od: OrderDetails){
   const contract = new ethers.Contract(contractAddress, contractABI, signer);
+  const paymentAmount = ethers.parseUnits((od.energy_amount * od.price).toString(), "wei");
+
   await contract.submitOrder(
     od.energy_amount,
     od.price,
     od.latitude,
     od.longitude,
-    od.sustainability
-  )
+    od.sustainability,
+    {
+      value: paymentAmount 
+    }
+  );
 }
 
 // Get offer book from ETH Exchange

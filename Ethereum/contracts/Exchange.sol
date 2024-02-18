@@ -12,7 +12,7 @@ contract Exchange{
         uint256 pricePerKWh;  
         
         string latitude;
-        string longtitude;
+        string longitude;
         string sustainability;
         string currency;
     }
@@ -23,7 +23,7 @@ contract Exchange{
         uint256 pricePerKWh;  
         
         string latitude;
-        string longtitude;
+        string longitude;
         string sustainability;
         string currency;
     }
@@ -35,6 +35,8 @@ contract Exchange{
     
     Offer[] public offerBook;
     Order[] public orderBook;
+
+    uint256 totalBalance = 0;
 
     // Constructor
     constructor() {
@@ -82,7 +84,7 @@ contract Exchange{
         uint256 _energyAmount, 
         uint256 _pricePerKWh, 
         string memory _latitude,
-        string memory _longtitude,
+        string memory _longitude,
         string memory _sustainability
         ) isActive() public {
         require(_energyAmount > 0, "Energy amount must be larger than 0");
@@ -92,7 +94,7 @@ contract Exchange{
             energyAmount: _energyAmount,
             pricePerKWh: _pricePerKWh,
             latitude: _latitude,
-            longtitude: _longtitude,
+            longitude: _longitude,
             sustainability: _sustainability,
             currency: CURRENCY
         });
@@ -100,26 +102,30 @@ contract Exchange{
     }
 
     // Function to add an order to the order book
-    function submitOrder (
-        uint256 _energyAmount, 
-        uint256 _pricePerKWh, 
-        string memory _latitude,
-        string memory _longtitude,
-        string memory _sustainability
-        ) public isActive() {
+    function submitOrder(
+    uint256 _energyAmount, 
+    uint256 _pricePerKWh, 
+    string memory _latitude,
+    string memory _longitude,
+    string memory _sustainability
+    ) public payable isActive() { 
         require(_energyAmount > 0, "Energy amount must be larger than 0");
+        require(msg.value == _energyAmount * _pricePerKWh, "Incorrect payment amount");
 
         Order memory newOrder = Order({
             consumer: addressToString(msg.sender),
             energyAmount: _energyAmount,
             pricePerKWh: _pricePerKWh,
             latitude: _latitude,
-            longtitude: _longtitude,
+            longitude: _longitude,
             sustainability: _sustainability,
             currency: CURRENCY
         });
+
         orderBook.push(newOrder);
+        totalBalance += msg.value;
     }
+
 
     // Function to view the order book
     function getOrderBook() public view returns (Order[] memory) {

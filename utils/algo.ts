@@ -4,6 +4,8 @@ import { OrderDetails } from './orderDetails';
 import * as Algorandabi from '../Algorand/artifacts/contract.json';
 import fs from 'fs';
 
+const crypto = require('crypto');
+
 //ALGO configuration
 const algorandToken = ''; 
 const algorandServer = 'https://testnet-api.algonode.cloud';
@@ -59,7 +61,7 @@ export async function startExchange(account: any, duration: number){
     approvalProgram: approvalBytes, 
     clearProgram: clearBytes,
     numGlobalByteSlices: 2, 
-    numGlobalInts: 3, 
+    numGlobalInts: 4, 
     numLocalByteSlices: 2, 
     numLocalInts: 3, 
   });
@@ -128,8 +130,23 @@ export async function submitOffer(account: any, od: OfferDetails, contractDetail
 // Submit order to Algo Exchange
 export async function submitOrder(account: any, od: OrderDetails, contractDetails: any){
   const suggestedParams = await algorandClient.getTransactionParams().do();
-  const atc = new algosdk.AtomicTransactionComposer();
-  atc.addMethodCall({
+  const paymentAmount = od.energy_amount * od.price;
+
+  const atc1 = new algosdk.AtomicTransactionComposer();
+  atc1.addTransaction({
+    txn: algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+      from: account.addr,
+      to: algosdk.getApplicationAddress(contractDetails.appId), 
+      amount: paymentAmount,
+      suggestedParams,
+    }),
+    signer: async (unsignedTxns) => unsignedTxns.map((t) => t.signTxn(account.sk)),
+  });
+
+  await atc1.execute(algorandClient, 3);
+
+  const atc2 = new algosdk.AtomicTransactionComposer();
+  atc2.addMethodCall({
     suggestedParams,
     sender: account.addr,
     signer: async (unsignedTxns) => unsignedTxns.map((t) => t.signTxn(account.sk)),
@@ -139,9 +156,9 @@ export async function submitOrder(account: any, od: OrderDetails, contractDetail
     boxes: [
       { appIndex: contractDetails.appId, name: new Uint8Array(algosdk.decodeAddress(account.addr).publicKey) }, 
       { appIndex: contractDetails.appId, name: new Uint8Array(Buffer.from("order_book")) }, 
-    ]
+    ],
   });
-  await atc.execute(algorandClient, 3);
+  await atc2.execute(algorandClient, 3);
 }
 
 // Get offer book from Algo Exchange
@@ -251,7 +268,14 @@ export async function getOrderBook(account: any, contractDetails: any){
   return orders;
 }
 
-// Set offer book from Algo Exchange
-export async function setOfferBook(account: any, offerBook: any){
-}
+export async function getBalance(account: any, contractDetails: any){
+  const appInfo = await algorandClient.getApplicationByID(contractDetails.appId).do();
+  const globalState = appInfo.params['global-state'] as {key: string, value: {bytes: string, type: number, uint: number}}[];
+  let total_balance = 0;
+  globalState.forEach((state) => {
+    const key = Buffer.from(state.key, 'base64').toString();
+    if (key === 'total_balance') total_balance =  state.value.uint;
+  });
+  return total_balance
 
+}
