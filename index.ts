@@ -5,6 +5,7 @@ import * as AlgoAccounts from './utils/accountAlgo'
 import { OfferDetails } from './utils/OfferDetails'
 import { OrderDetails } from './utils/orderDetails'
 import { matchPair } from './utils/matching'
+import { executeTransaction } from './utils/execute'
 
 
 async function main() {
@@ -48,6 +49,9 @@ async function main() {
   // Matching algorithm
   const matchesArray = await matchPair(mergeOrderBook, mergeOfferBook);
   console.log(matchesArray);
+
+  // Distribution phase
+  executeTransaction(ETHOwner, AlgoOwner, AlgoContractDetails, matchesArray, mergeOfferBook, mergeOrderBook)
 }
 
 

@@ -152,9 +152,9 @@ contract Exchange{
             offerBook.push(_offerBook[i]);
     }
 
-    // Function for matching algorithm
-    function matchOffersAndOrders() public onlyOwner{
-        
+    // Function to return balance of the exchange
+    function getBalance() public view returns (uint256) {
+        return totalBalance;
     }
 
     // Helper function to convert address to string

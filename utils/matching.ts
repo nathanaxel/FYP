@@ -4,7 +4,7 @@ type ExchangeRates = { [key: string]: number };
 
 // Mock exchange rates for demonstration purposes
 const EXCHANGE_RATES: ExchangeRates = {
-  ETHE: 2000, // Example rate: 1 ETHE = 2000 USDC
+  ETHE: 2000, // Example rate: 1 ETHE = 2000 USDC (should be WEI)
   ALGO: 1.5,  // Example rate: 1 ALGO = 1.5 USDC
 };
 
@@ -62,16 +62,19 @@ export async function matchPair(orderbook: Order[], offerBook: Offer[]) {
   // with transmission loss estimated from the distance (longitude/latitude) using the formula: energy * distance * 8.3e-5.
   const producerRankings = new Map<string, string[]>();
   standardizedOfferBook.forEach(offer => {
-    const [producerWallet, producerAmount, producerPrice, producerLat, producerLong, producerGrade, ] = offer;
+    const [producerWallet, producerAmount, producerPrice, producerLat, producerLong, producerGrade] = offer;
     const eligibleCustomers = standardizedOrderbook
-      .filter(([ , customerAmount, customerPrice, , , customerGrade, ]) => {
-        const isDemandMet = customerAmount <= producerAmount;
-        const isPriceCompatible = customerPrice >= producerPrice;
+      .filter(([ , customerAmount, customerPrice, customerLat, customerLong, customerGrade]) => {
+        // Estimate transmission loss upfront
+        const distance = calculateDistance(producerLat, producerLong, customerLat, customerLong);
+        const transmissionLoss = customerAmount * distance * 8.3e-5;
+        const totalDemand = customerAmount + transmissionLoss;
+        const isDemandMet = totalDemand <= producerAmount;
+        const isPriceCompatible = customerPrice * customerAmount >= producerPrice * totalDemand;
         const isGradeCompatible = customerGrade <= producerGrade;
         return isDemandMet && isPriceCompatible && isGradeCompatible;
       })
-      .map(customer => {
-        const [customerWallet, customerAmount, , customerLat, customerLong] = customer;
+      .map(([customerWallet, customerAmount, , customerLat, customerLong]) => {
         const distance = calculateDistance(producerLat, producerLong, customerLat, customerLong);
         const transmissionLoss = customerAmount * distance * 8.3e-5;
         const grossEnergy = customerAmount + transmissionLoss;
@@ -104,18 +107,22 @@ export async function matchPair(orderbook: Order[], offerBook: Offer[]) {
   standardizedOrderbook.forEach(order => {
     const [consumerWallet, consumerAmount, consumerPrice, consumerLat, consumerLong, consumerGrade] = order;
     const eligibleProducers = standardizedOfferBook
-      .filter(([ , producerAmount, producerPrice, , , producerGrade]) => {
-        const isSupplySufficient = producerAmount >= consumerAmount;
-        const isPriceAffordable = consumerPrice >= producerPrice;
+      .filter(([ , producerAmount, producerPrice, producerLat, producerLong, producerGrade]) => {
+        // Estimate transmission loss upfront
+        const distance = calculateDistance(consumerLat, consumerLong, producerLat, producerLong);
+        const transmissionLoss = consumerAmount * distance * 8.3e-5;
+        const totalDemand = consumerAmount + transmissionLoss;
+        const isSupplySufficient = producerAmount >= totalDemand;
+        const isPriceAffordable = consumerPrice * consumerAmount >= producerPrice * totalDemand;
         const isGradeCompatible = consumerGrade <= producerGrade;
         return isSupplySufficient && isPriceAffordable && isGradeCompatible;
       })
-      .map(producer => {
-        const [producerWallet, , producerPrice, producerLat, producerLong] = producer;
+      .map(([producerWallet, , producerPrice, producerLat, producerLong]) => {
         const distance = calculateDistance(consumerLat, consumerLong, producerLat, producerLong);
         const transmissionLoss = consumerAmount * distance * 8.3e-5;
         const grossEnergy = consumerAmount + transmissionLoss;
         const cost = grossEnergy * producerPrice; // Calculate cost based on producer's price
+  
         return { producerWallet, cost };
       })
       // Sort by potential cost in ascending order to minimize cost

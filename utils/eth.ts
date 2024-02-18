@@ -105,7 +105,11 @@ export async function setOrderBook(signer: any, mergeOrderBook: any){
   await contract.setOrderBook(mergeOrderBook);
 }
 
-
+// get balance form ETH Exchange
+export async function getBalance(signer: any){
+  const contract = new ethers.Contract(contractAddress, contractABI, signer);
+  return await contract.getBalance();
+}
 
 
 
